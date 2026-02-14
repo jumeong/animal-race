@@ -1,4 +1,4 @@
-package com.example.animalrace
+package com.jumeong.animalrace
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4

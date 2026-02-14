@@ -1,4 +1,4 @@
-package com.example.animalrace
+package com.jumeong.animalrace
 
 import org.junit.Test
 
