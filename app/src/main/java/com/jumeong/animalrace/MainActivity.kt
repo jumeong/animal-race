@@ -13,7 +13,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.FrameLayout
+
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -85,7 +85,6 @@ class MainActivity : AppCompatActivity() {
     private var mediaPlayer: MediaPlayer? = null
     private lateinit var raceView: RaceView
     private lateinit var adView: AdView
-    private lateinit var adContainer: FrameLayout
     private var isBgmEnabled = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,19 +96,34 @@ class MainActivity : AppCompatActivity() {
 
         initializeAds()
 
-        val rootLayout = FrameLayout(this).apply {
+        val rootLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setBackgroundColor(backgroundColor)
         }
 
         raceView = RaceView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
+            layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                0,
+                1f
+            )
+        }
+
+        adView = AdView(this).apply {
+            setAdSize(AdSize.BANNER)
+            adUnitId = "ca-app-pub-1141162708477405/6104737015"
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
 
         rootLayout.addView(raceView)
+        rootLayout.addView(adView)
         setContentView(rootLayout)
+
+        val adRequest = AdRequest.Builder().build()
+        adView.loadAd(adRequest)
     }
 
     private fun initializeAds() {
@@ -149,12 +163,14 @@ class MainActivity : AppCompatActivity() {
     fun isBgmEnabled(): Boolean = isBgmEnabled
 
     override fun onPause() {
+        adView.pause()
         super.onPause()
         mediaPlayer?.pause()
     }
 
     override fun onResume() {
         super.onResume()
+        adView.resume()
         if (isBgmEnabled && raceView.isRacing() && !raceView.isPaused()) {
             mediaPlayer?.start()
         }
@@ -269,6 +285,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        adView.destroy()
         super.onDestroy()
         mediaPlayer?.release()
         mediaPlayer = null
@@ -325,6 +342,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         private var racingAnimals = mutableListOf<Animal>()
+        private var displayLaneCount = 4  // 최소 4레인 표시
         private val trackObjects = mutableListOf<MutableList<TrackObject>>()
         private var currentGameState = GameState.INTRO
         private var isRacing = false
@@ -403,7 +421,7 @@ class MainActivity : AppCompatActivity() {
         private fun getAnimalSize(): Int {
             val baseSize = 80
             val maxSize = 150
-            val laneHeight = height.toFloat() / racingAnimals.size.coerceAtLeast(1)
+            val laneHeight = height.toFloat() / displayLaneCount.coerceAtLeast(1)
 
             // 레인 높이의 60%를 동물 크기로 사용 (최소 80, 최대 150)
             val dynamicSize = (laneHeight * 0.6f).toInt()
@@ -635,11 +653,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         private fun handleIntroTouch(tx: Float, ty: Float) {
-            val cellGap = 20f
-            val cellSize = min((width * 0.7f - cellGap * 4) / 5f, height * 0.28f)
+            val h = height.toFloat()
+            val cellGap = 15f
+            val availableHeight = h * 0.50f
+            val cellSizeFromHeight = (availableHeight - cellGap) / 2f
+            val cellSizeFromWidth = (width * 0.65f - cellGap * 4) / 5f
+            val cellSize = min(cellSizeFromWidth, cellSizeFromHeight)
             val totalGridWidth = cellSize * 5 + cellGap * 4
             val startX = (width - totalGridWidth) / 2f
-            val startY = height * 0.23f
+            val startY = h * 0.18f
 
             for (i in allAnimals.indices) {
                 val r = i / 5
@@ -655,32 +677,60 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            // 맵 선택 버튼 터치 처리
+            val mapBtnW = width * 0.18f
+            val mapBtnH = h * 0.09f
+            val mapBtnY = h * 0.73f
+            val mapBtnGap = 20f
+            val totalMapBtnWidth = mapBtnW * 2 + mapBtnGap
+            val mapBtnStartX = (width - totalMapBtnWidth) / 2f
+
+            // GRASS 버튼
+            val grassLeft = mapBtnStartX
+            if (tx in grassLeft..(grassLeft + mapBtnW) && ty in mapBtnY..(mapBtnY + mapBtnH)) {
+                currentMapType = MapType.GRASS
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                invalidate()
+                return
+            }
+
+            // DIRT 버튼
+            val dirtLeft = mapBtnStartX + mapBtnW + mapBtnGap
+            if (tx in dirtLeft..(dirtLeft + mapBtnW) && ty in mapBtnY..(mapBtnY + mapBtnH)) {
+                currentMapType = MapType.DIRT
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                invalidate()
+                return
+            }
+
             // Start button
             val btnW = width * 0.3f
-            val bT = height * 0.88f
+            val bT = h * 0.86f
+            val btnH = h * 0.10f
             val btnL = (width - btnW) / 2f
             if (allAnimals.count { it.isSelected } >= 2 &&
-                tx in btnL..(btnL + btnW) && ty in bT..(bT + height * 0.1f)) {
+                tx in btnL..(btnL + btnW) && ty in bT..(bT + btnH)) {
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 startRace()
             }
         }
 
         private fun startRace() {
-
-            // 랜덤하게 맵 선택
-            currentMapType = MapType.values().random()
+            // 맵은 인트로에서 이미 선택됨 (currentMapType)
 
             racingAnimals.clear()
             trackObjects.clear()
 
             allAnimals.filter { it.isSelected }.forEach {
                 racingAnimals.add(it.copy(speed = 0.0013f + Random.nextFloat() * 0.0002f))
-                val objects = MutableList(Random.nextInt(3)) {
+                val objects = MutableList(Random.nextInt(3, 7)) {
                     TrackObject(Random.nextFloat() * 0.8f + 0.1f, Random.nextBoolean())
                 }.apply { sortBy { it.progress } }
                 trackObjects.add(objects)
             }
+
+            // 4명 이하일 때도 최소 4레인 사용
+            displayLaneCount = maxOf(racingAnimals.size, 4)
 
             currentGameState = GameState.RACING
             isRacing = true
@@ -825,39 +875,46 @@ class MainActivity : AppCompatActivity() {
 
 
         private fun drawIntro(canvas: Canvas) {
-            drawTitle(canvas)
-            drawAnimalSelection(canvas)
-            drawStartButton(canvas)
+            val h = height.toFloat()
+            drawTitle(canvas, h)
+            drawAnimalSelection(canvas, h)
+            drawMapSelection(canvas, h)
+            drawStartButton(canvas, h)
         }
 
-        private fun drawTitle(canvas: Canvas) {
-            paint.textSize = 100f
+        private fun drawTitle(canvas: Canvas, h: Float) {
+            paint.textSize = h * 0.14f
             paint.style = Paint.Style.FILL_AND_STROKE
             paint.strokeWidth = 8f
 
             // Shadow
             paint.color = Color.parseColor("#FF6B35")
-            canvas.drawText("ANIMAL RACE", width / 2f + 4f, height * 0.15f + 4f, paint)
+            canvas.drawText("ANIMAL RACE", width / 2f + 4f, h * 0.13f + 4f, paint)
 
             // Gradient text
             val shader = LinearGradient(
-                0f, height * 0.12f, 0f, height * 0.17f,
+                0f, h * 0.10f, 0f, h * 0.15f,
                 Color.parseColor("#FFD700"),
                 Color.parseColor("#FF9800"),
                 Shader.TileMode.CLAMP
             )
             paint.shader = shader
-            canvas.drawText("ANIMAL RACE", width / 2f, height * 0.15f, paint)
+            canvas.drawText("ANIMAL RACE", width / 2f, h * 0.13f, paint)
             paint.shader = null
             paint.style = Paint.Style.FILL
         }
 
-        private fun drawAnimalSelection(canvas: Canvas) {
-            val cellGap = 20f
-            val cellSize = min((width * 0.7f - cellGap * 4) / 5f, height * 0.28f)
+        private fun drawAnimalSelection(canvas: Canvas, h: Float) {
+            val cellGap = 15f
+            // 캐릭터 선택 영역: 0.18f ~ 0.68f (50% 영역)
+            val availableHeight = h * 0.50f
+            val cellSizeFromHeight = (availableHeight - cellGap) / 2f  // 2행
+            val cellSizeFromWidth = (width * 0.65f - cellGap * 4) / 5f  // 5열
+            val cellSize = min(cellSizeFromWidth, cellSizeFromHeight)
             val totalGridWidth = cellSize * 5 + cellGap * 4
+            val totalGridHeight = cellSize * 2 + cellGap
             val startX = (width - totalGridWidth) / 2f
-            val startY = height * 0.23f
+            val startY = h * 0.18f
 
             allAnimals.forEachIndexed { i, animal ->
                 val r = i / 5
@@ -902,11 +959,59 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        private fun drawStartButton(canvas: Canvas) {
+        private fun drawMapSelection(canvas: Canvas, h: Float) {
+            val mapBtnW = width * 0.18f
+            val mapBtnH = h * 0.09f
+            val mapBtnY = h * 0.73f
+            val mapBtnGap = 20f
+            val totalMapBtnWidth = mapBtnW * 2 + mapBtnGap
+            val mapBtnStartX = (width - totalMapBtnWidth) / 2f
+
+            // 라벨
+            paint.textSize = h * 0.045f
+            paint.color = Color.WHITE
+            paint.style = Paint.Style.FILL
+            paint.textAlign = Paint.Align.CENTER
+
+            // GRASS 버튼
+            val grassRect = RectF(mapBtnStartX, mapBtnY, mapBtnStartX + mapBtnW, mapBtnY + mapBtnH)
+            paint.style = Paint.Style.FILL
+            paint.color = if (currentMapType == MapType.GRASS) Color.parseColor("#4CAF50") else Color.parseColor("#66000000")
+            canvas.drawRoundRect(grassRect, 15f, 15f, paint)
+            if (currentMapType == MapType.GRASS) {
+                paint.style = Paint.Style.STROKE
+                paint.color = Color.parseColor("#CCFF00")
+                paint.strokeWidth = 5f
+                canvas.drawRoundRect(grassRect, 15f, 15f, paint)
+            }
+            paint.style = Paint.Style.FILL
+            paint.color = Color.WHITE
+            paint.textSize = h * 0.04f
+            canvas.drawText("🌿 GRASS", grassRect.centerX(), grassRect.centerY() + 10f, paint)
+
+            // DIRT 버튼
+            val dirtRect = RectF(mapBtnStartX + mapBtnW + mapBtnGap, mapBtnY, mapBtnStartX + mapBtnW * 2 + mapBtnGap, mapBtnY + mapBtnH)
+            paint.style = Paint.Style.FILL
+            paint.color = if (currentMapType == MapType.DIRT) Color.parseColor("#D4A056") else Color.parseColor("#66000000")
+            canvas.drawRoundRect(dirtRect, 15f, 15f, paint)
+            if (currentMapType == MapType.DIRT) {
+                paint.style = Paint.Style.STROKE
+                paint.color = Color.parseColor("#CCFF00")
+                paint.strokeWidth = 5f
+                canvas.drawRoundRect(dirtRect, 15f, 15f, paint)
+            }
+            paint.style = Paint.Style.FILL
+            paint.color = Color.WHITE
+            paint.textSize = h * 0.04f
+            canvas.drawText("🏜️ DIRT", dirtRect.centerX(), dirtRect.centerY() + 10f, paint)
+        }
+
+        private fun drawStartButton(canvas: Canvas, h: Float) {
             val btnW = width * 0.3f
             val bL = (width - btnW) / 2f
-            val bT = height * 0.88f
-            val rect = RectF(bL, bT, bL + btnW, bT + height * 0.1f)
+            val bT = h * 0.86f
+            val btnH = h * 0.10f
+            val rect = RectF(bL, bT, bL + btnW, bT + btnH)
 
             paint.style = Paint.Style.FILL
             paint.color = if (allAnimals.count { it.isSelected } >= 2) colorButton else Color.GRAY
@@ -915,8 +1020,8 @@ class MainActivity : AppCompatActivity() {
             paint.style = Paint.Style.FILL_AND_STROKE
             paint.strokeWidth = 3f
             paint.color = Color.BLACK
-            paint.textSize = 45f
-            canvas.drawText("START RACE", width / 2f, bT + height * 0.065f, paint)
+            paint.textSize = h * 0.065f
+            canvas.drawText("START RACE", width / 2f, bT + btnH * 0.7f, paint)
             paint.style = Paint.Style.FILL
             paint.strokeWidth = 0f
         }
@@ -925,7 +1030,7 @@ class MainActivity : AppCompatActivity() {
             canvas.save()
             canvas.translate(-cameraX, 0f)
 
-            val rH = height.toFloat() / racingAnimals.size
+            val rH = height.toFloat() / displayLaneCount
             val fX = trackLength - FINISH_LINE_OFFSET
 
             drawFinishLine(canvas, fX)
@@ -934,7 +1039,7 @@ class MainActivity : AppCompatActivity() {
             canvas.restore()  // 여기서 카메라 변환 해제
 
             // 순위를 화면 좌표계에서 그리기
-            drawRanks(canvas, rH, fX)
+            drawRanks(canvas, height.toFloat() / displayLaneCount, fX)
 
             drawControlButtons(canvas)
         }
@@ -1001,16 +1106,16 @@ class MainActivity : AppCompatActivity() {
             val animalSize = getAnimalSize()
             val itemScale = animalSize / 80f
 
+            // 모든 레인 구분선 그리기 (displayLaneCount 기준)
+            for (lane in 1 until displayLaneCount) {
+                paint.strokeWidth = LANE_SEPARATOR_WIDTH
+                paint.color = Color.WHITE
+                paint.alpha = 90
+                canvas.drawLine(0f, lane * rowHeight, trackLength, lane * rowHeight, paint)
+            }
+
             racingAnimals.forEachIndexed { i, animal ->
                 val centerY = (i * rowHeight) + (rowHeight / 2f)
-
-                // 레인 구분선
-                if (i < racingAnimals.size - 1) {
-                    paint.strokeWidth = LANE_SEPARATOR_WIDTH
-                    paint.color = Color.WHITE
-                    paint.alpha = 90
-                    canvas.drawLine(0f, (i + 1) * rowHeight, trackLength, (i + 1) * rowHeight, paint)
-                }
 
                 // Track objects
                 drawTrackObjects(canvas, i, finishX, centerY, itemScale)
