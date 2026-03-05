@@ -26,15 +26,24 @@ import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.RequestConfiguration
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
 // --- 상태 및 데이터 정의 ---
-enum class GameState { INTRO, RACING, FINISHED }
+enum class GameState { INTRO, COUNTDOWN, RACING, FINISHED }
 enum class RaceState { RUNNING, STUNNED, BOOST }
 
 data class TrackObject(val progress: Float, val isItem: Boolean, var isActive: Boolean = true)
 data class SandParticle(val x: Float, val y: Float, val size: Float, val alpha: Int)
+data class CelebrationParticle(
+    var x: Float, var y: Float,
+    var vx: Float, var vy: Float,
+    val color: Int, var size: Float,
+    var alpha: Float, var rotation: Float,
+    var rotationSpeed: Float
+)
+data class ParallaxElement(val x: Float, val y: Float, val size: Float, val type: Int, val color: Int)
 
 data class Animal(
     val emoji: String,
@@ -352,6 +361,25 @@ class MainActivity : AppCompatActivity() {
         private var cameraX = 0f
         private var isPaused = false
 
+        // Countdown
+        private var countdownValue = 3
+        private var countdownFrameCounter = 0
+        private var countdownAlpha = 255f
+        private var countdownScale = 3f
+
+        // Celebration
+        private val celebrationParticles = mutableListOf<CelebrationParticle>()
+        private var showCelebration = false
+
+        // Parallax
+        private var parallaxFar = mutableListOf<ParallaxElement>()
+        private var parallaxMid = mutableListOf<ParallaxElement>()
+        private var parallaxNear = mutableListOf<ParallaxElement>()
+
+        // Shimmer & intro animation
+        private var shimmerOffset = 0f
+        private var introAnimFrame = 0
+
         private val handler = Handler(Looper.getMainLooper())
         private val updateRunnable = object : Runnable {
             override fun run() {
@@ -386,6 +414,8 @@ class MainActivity : AppCompatActivity() {
             }
             currentGameState = GameState.INTRO
             isRacing = false
+            showCelebration = false
+            celebrationParticles.clear()
             invalidate()
         }
 
@@ -732,12 +762,18 @@ class MainActivity : AppCompatActivity() {
             // 4명 이하일 때도 최소 4레인 사용
             displayLaneCount = maxOf(racingAnimals.size, 4)
 
-            currentGameState = GameState.RACING
-            isRacing = true
+            currentGameState = GameState.COUNTDOWN
+            isRacing = false
             rankCounter = 1
             frameCounter = 0
             cameraX = 0f
-            this@MainActivity.startBgm()
+            countdownValue = 3
+            countdownFrameCounter = 0
+            countdownAlpha = 255f
+            countdownScale = 3f
+            showCelebration = false
+            celebrationParticles.clear()
+            generateParallaxElements()
         }
 
 
@@ -745,9 +781,17 @@ class MainActivity : AppCompatActivity() {
             if (isPaused) return
             frameCounter++
 
-            if (currentGameState == GameState.RACING && isRacing) {
-                updateRace()
+            // Shimmer & intro animation (always runs)
+            shimmerOffset += 0.008f
+            if (shimmerOffset > 1f) shimmerOffset = 0f
+            introAnimFrame++
+
+            when (currentGameState) {
+                GameState.COUNTDOWN -> updateCountdown()
+                GameState.RACING -> if (isRacing) updateRace()
+                else -> {}
             }
+            if (showCelebration) updateCelebrationParticles()
         }
 
         private fun updateRace() {
@@ -766,6 +810,9 @@ class MainActivity : AppCompatActivity() {
                 if (animal.progress >= 1f && animal.rank == 0) {
                     animal.progress = 1f
                     animal.rank = rankCounter++
+                    if (animal.rank == 1) {
+                        spawnCelebration(i)
+                    }
                 }
             }
 
@@ -869,6 +916,10 @@ class MainActivity : AppCompatActivity() {
 
             when (currentGameState) {
                 GameState.INTRO -> drawIntro(canvas)
+                GameState.COUNTDOWN -> {
+                    drawRace(canvas)
+                    drawCountdown(canvas)
+                }
                 else -> drawRace(canvas)
             }
         }
@@ -892,16 +943,32 @@ class MainActivity : AppCompatActivity() {
             canvas.drawText("ANIMAL RACE", width / 2f + 4f, h * 0.13f + 4f, paint)
 
             // Gradient text
-            val shader = LinearGradient(
+            val baseShader = LinearGradient(
                 0f, h * 0.10f, 0f, h * 0.15f,
                 Color.parseColor("#FFD700"),
                 Color.parseColor("#FF9800"),
                 Shader.TileMode.CLAMP
             )
-            paint.shader = shader
+            paint.shader = baseShader
             canvas.drawText("ANIMAL RACE", width / 2f, h * 0.13f, paint)
             paint.shader = null
+
+            // Shimmer highlight overlay
+            val shimmerW = width * 0.15f
+            val sx = shimmerOffset * (width + shimmerW) - shimmerW
+            val shimmerShader = LinearGradient(
+                sx, 0f, sx + shimmerW, 0f,
+                intArrayOf(Color.TRANSPARENT, Color.argb(160, 255, 255, 255), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.5f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            paint.shader = shimmerShader
+            paint.alpha = 200
+            canvas.drawText("ANIMAL RACE", width / 2f, h * 0.13f, paint)
+            paint.shader = null
+            paint.alpha = 255
             paint.style = Paint.Style.FILL
+            paint.strokeWidth = 0f
         }
 
         private fun drawAnimalSelection(canvas: Canvas, h: Float) {
@@ -928,6 +995,28 @@ class MainActivity : AppCompatActivity() {
         }
 
         private fun drawAnimalCell(canvas: Canvas, animal: Animal, rect: RectF) {
+            val cx = rect.centerX()
+            val cy = rect.centerY()
+
+            // Bounce scale when selected
+            val scale = if (animal.isSelected) {
+                1.0f + sin(introAnimFrame * 0.08f) * 0.04f
+            } else 1.0f
+
+            canvas.save()
+            canvas.translate(cx, cy)
+            canvas.scale(scale, scale)
+            canvas.translate(-cx, -cy)
+
+            // Glow behind selected
+            if (animal.isSelected) {
+                paint.color = Color.argb((80 + sin(introAnimFrame * 0.1f) * 30).toInt().coerceIn(0,255), 204, 255, 0)
+                paint.style = Paint.Style.FILL
+                paint.maskFilter = BlurMaskFilter(15f, BlurMaskFilter.Blur.NORMAL)
+                canvas.drawRoundRect(rect, 20f, 20f, paint)
+                paint.maskFilter = null
+            }
+
             // Background
             paint.color = if (animal.isSelected) Color.parseColor("#CCFFFFFF") else Color.parseColor("#B3000000")
             paint.style = Paint.Style.FILL
@@ -957,6 +1046,8 @@ class MainActivity : AppCompatActivity() {
                 paint.strokeWidth = 8f
                 canvas.drawRoundRect(rect, 20f, 20f, paint)
             }
+
+            canvas.restore()
         }
 
         private fun drawMapSelection(canvas: Canvas, h: Float) {
@@ -1027,6 +1118,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         private fun drawRace(canvas: Canvas) {
+            drawParallaxLayers(canvas)
+
             canvas.save()
             canvas.translate(-cameraX, 0f)
 
@@ -1036,12 +1129,11 @@ class MainActivity : AppCompatActivity() {
             drawFinishLine(canvas, fX)
             drawLanes(canvas, rH, fX)
 
-            canvas.restore()  // 여기서 카메라 변환 해제
+            canvas.restore()
 
-            // 순위를 화면 좌표계에서 그리기
             drawRanks(canvas, height.toFloat() / displayLaneCount, fX)
-
             drawControlButtons(canvas)
+            if (showCelebration) drawCelebration(canvas)
         }
 
         private fun drawRanks(canvas: Canvas, rowHeight: Float, finishX: Float) {
@@ -1097,21 +1189,67 @@ class MainActivity : AppCompatActivity() {
 
 
         private fun drawFinishLine(canvas: Canvas, finishX: Float) {
-            paint.color = Color.WHITE
-            paint.strokeWidth = 20f
-            canvas.drawLine(finishX, 0f, finishX, height.toFloat(), paint)
+            val checkerSize = 20f
+            val numCols = 3
+            val numRows = (height / checkerSize).toInt() + 1
+            val startX = finishX - checkerSize * numCols / 2f
+
+            paint.style = Paint.Style.FILL
+            for (row in 0 until numRows) {
+                for (col in 0 until numCols) {
+                    paint.color = if ((row + col) % 2 == 0) Color.WHITE else Color.BLACK
+                    canvas.drawRect(
+                        startX + col * checkerSize,
+                        row * checkerSize,
+                        startX + (col + 1) * checkerSize,
+                        (row + 1) * checkerSize,
+                        paint
+                    )
+                }
+            }
         }
 
         private fun drawLanes(canvas: Canvas, rowHeight: Float, finishX: Float) {
             val animalSize = getAnimalSize()
             val itemScale = animalSize / 80f
 
-            // 모든 레인 구분선 그리기 (displayLaneCount 기준)
+            // 1-6: Odd/even lane tinting
+            for (lane in 0 until displayLaneCount) {
+                if (lane % 2 == 1) {
+                    paint.color = Color.argb(18, 0, 0, 0)
+                    paint.style = Paint.Style.FILL
+                    canvas.drawRect(0f, lane * rowHeight, trackLength, (lane + 1) * rowHeight, paint)
+                }
+            }
+
+            // 1-6: Dashed lane separators
             for (lane in 1 until displayLaneCount) {
-                paint.strokeWidth = LANE_SEPARATOR_WIDTH
+                val y = lane * rowHeight
                 paint.color = Color.WHITE
-                paint.alpha = 90
-                canvas.drawLine(0f, lane * rowHeight, trackLength, lane * rowHeight, paint)
+                paint.alpha = 100
+                paint.strokeWidth = 4f
+                paint.style = Paint.Style.STROKE
+                val dashLen = 30f
+                val gapLen = 20f
+                var dx = 0f
+                while (dx < trackLength) {
+                    canvas.drawLine(dx, y, min(dx + dashLen, trackLength), y, paint)
+                    dx += dashLen + gapLen
+                }
+                paint.style = Paint.Style.FILL
+                paint.alpha = 255
+            }
+
+            // 1-6: Lane numbers on left side
+            paint.textSize = rowHeight * 0.25f
+            paint.textAlign = Paint.Align.CENTER
+            paint.style = Paint.Style.FILL
+            for (lane in 0 until displayLaneCount) {
+                val cy = lane * rowHeight + rowHeight / 2f
+                paint.color = Color.argb(100, 255, 255, 255)
+                canvas.drawCircle(25f, cy, rowHeight * 0.18f, paint)
+                paint.color = Color.argb(180, 0, 0, 0)
+                canvas.drawText("${lane + 1}", 25f, cy + rowHeight * 0.09f, paint)
             }
 
             racingAnimals.forEachIndexed { i, animal ->
@@ -1119,6 +1257,25 @@ class MainActivity : AppCompatActivity() {
 
                 // Track objects
                 drawTrackObjects(canvas, i, finishX, centerY, itemScale)
+
+                // 1-4: Boost afterimage (ghost trails)
+                if (animal.state == RaceState.BOOST) {
+                    for (g in 1..3) {
+                        val ghostAlpha = (60 - g * 18).coerceAtLeast(10)
+                        val ghostOffset = g * animalSize * 0.35f
+                        bitmapPaint.alpha = ghostAlpha
+                        canvas.save()
+                        canvas.translate(animal.progress * finishX - ghostOffset, centerY + animal.bobOffset)
+                        val bitmap = animalBitmaps[animal.emoji]
+                        if (bitmap != null) {
+                            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, animalSize, animalSize, true)
+                            canvas.drawBitmap(scaledBitmap, -animalSize / 2f, -animalSize / 2f, bitmapPaint)
+                            if (scaledBitmap != bitmap) scaledBitmap.recycle()
+                        }
+                        canvas.restore()
+                        bitmapPaint.alpha = 255
+                    }
+                }
 
                 // Animal
                 canvas.save()
@@ -1131,6 +1288,18 @@ class MainActivity : AppCompatActivity() {
                 if (animal.state == RaceState.BOOST) {
                     paint.textSize = animalSize * 0.5f
                     canvas.drawText("🔥", -animalSize * 0.75f, -animalSize * 0.25f, paint)
+                }
+
+                // 1-4: Stun stars orbiting
+                if (animal.state == RaceState.STUNNED) {
+                    paint.textSize = animalSize * 0.3f
+                    val starRadius = animalSize * 0.55f
+                    for (s in 0..2) {
+                        val starAngle = frameCounter * 0.12f + s * (Math.PI.toFloat() * 2f / 3f)
+                        val sx = cos(starAngle) * starRadius
+                        val sy = sin(starAngle) * starRadius - animalSize * 0.3f
+                        canvas.drawText("⭐", sx, sy, paint)
+                    }
                 }
 
                 canvas.restore()
@@ -1193,6 +1362,272 @@ class MainActivity : AppCompatActivity() {
                 paint.strokeWidth = 8f
                 canvas.drawLine(x + 25f, y + 20f, x + 25f, y + 60f, paint)
                 canvas.drawLine(x + 55f, y + 20f, x + 55f, y + 60f, paint)
+            }
+        }
+
+        // === COUNTDOWN ===
+        private fun updateCountdown() {
+            countdownFrameCounter++
+            val framesPerStep = 55
+            val progress = countdownFrameCounter.toFloat() / framesPerStep
+
+            countdownScale = 3f - (2f * progress).coerceAtMost(2f)
+            countdownAlpha = if (progress > 0.7f) ((1f - (progress - 0.7f) / 0.3f) * 255f) else 255f
+
+            if (countdownFrameCounter >= framesPerStep) {
+                countdownFrameCounter = 0
+                countdownValue--
+                countdownScale = 3f
+                countdownAlpha = 255f
+
+                if (countdownValue < 0) {
+                    currentGameState = GameState.RACING
+                    isRacing = true
+                    this@MainActivity.startBgm()
+                }
+            }
+        }
+
+        private fun drawCountdown(canvas: Canvas) {
+            paint.color = Color.BLACK
+            paint.alpha = 100
+            paint.style = Paint.Style.FILL
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+            paint.alpha = 255
+
+            val centerX = width / 2f
+            val centerY = height / 2f
+            val text = if (countdownValue > 0) countdownValue.toString() else "GO!"
+            val baseSize = height * 0.4f
+
+            canvas.save()
+            canvas.translate(centerX, centerY)
+            canvas.scale(countdownScale, countdownScale)
+
+            paint.textSize = baseSize
+            paint.textAlign = Paint.Align.CENTER
+            paint.style = Paint.Style.FILL_AND_STROKE
+            paint.strokeWidth = 8f
+            paint.color = Color.BLACK
+            paint.alpha = countdownAlpha.toInt().coerceIn(0, 255)
+            canvas.drawText(text, 4f, baseSize * 0.35f + 4f, paint)
+
+            val shader = LinearGradient(
+                0f, -baseSize * 0.2f, 0f, baseSize * 0.4f,
+                if (countdownValue > 0) Color.WHITE else Color.parseColor("#FFD700"),
+                if (countdownValue > 0) Color.parseColor("#90CAF9") else Color.parseColor("#FF9800"),
+                Shader.TileMode.CLAMP
+            )
+            paint.shader = shader
+            paint.alpha = countdownAlpha.toInt().coerceIn(0, 255)
+            canvas.drawText(text, 0f, baseSize * 0.35f, paint)
+            paint.shader = null
+            paint.style = Paint.Style.FILL
+            paint.strokeWidth = 0f
+            paint.alpha = 255
+            canvas.restore()
+
+            if (countdownValue == 0 && countdownFrameCounter < 10) {
+                paint.color = Color.WHITE
+                paint.alpha = ((1f - countdownFrameCounter / 10f) * 120).toInt()
+                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+                paint.alpha = 255
+            }
+        }
+
+        // === PARALLAX ===
+        private fun generateParallaxElements() {
+            parallaxFar.clear()
+            parallaxMid.clear()
+            parallaxNear.clear()
+            val h = height.toFloat()
+
+            when (currentMapType) {
+                MapType.GRASS -> {
+                    repeat(15) {
+                        parallaxFar.add(ParallaxElement(
+                            Random.nextFloat() * trackLength * 1.2f,
+                            Random.nextFloat() * h,
+                            Random.nextFloat() * 80f + 40f, 0,
+                            Color.argb(25, 255, 255, 255)
+                        ))
+                    }
+                    repeat(30) {
+                        parallaxMid.add(ParallaxElement(
+                            Random.nextFloat() * trackLength * 1.2f,
+                            Random.nextFloat() * h,
+                            Random.nextFloat() * 6f + 3f, 1,
+                            if (Random.nextBoolean()) Color.argb(60, 255, 255, 100)
+                            else Color.argb(60, 255, 200, 200)
+                        ))
+                    }
+                    repeat(40) {
+                        parallaxNear.add(ParallaxElement(
+                            Random.nextFloat() * trackLength * 1.2f,
+                            Random.nextFloat() * h,
+                            Random.nextFloat() * 8f + 4f, 2,
+                            Color.argb(35, 0, 80, 0)
+                        ))
+                    }
+                }
+                MapType.DIRT -> {
+                    repeat(12) {
+                        parallaxFar.add(ParallaxElement(
+                            Random.nextFloat() * trackLength * 1.2f,
+                            Random.nextFloat() * h,
+                            Random.nextFloat() * 100f + 50f, 0,
+                            Color.argb(20, 255, 220, 150)
+                        ))
+                    }
+                    repeat(25) {
+                        parallaxMid.add(ParallaxElement(
+                            Random.nextFloat() * trackLength * 1.2f,
+                            Random.nextFloat() * h,
+                            Random.nextFloat() * 5f + 2f, 1,
+                            Color.argb(50, 160, 120, 80)
+                        ))
+                    }
+                    repeat(20) {
+                        parallaxNear.add(ParallaxElement(
+                            Random.nextFloat() * trackLength * 1.2f,
+                            Random.nextFloat() * h,
+                            Random.nextFloat() * 30f + 15f, 2,
+                            Color.argb(25, 200, 180, 140)
+                        ))
+                    }
+                }
+            }
+        }
+
+        private fun drawParallaxLayers(canvas: Canvas) {
+            paint.style = Paint.Style.FILL
+
+            canvas.save()
+            canvas.translate(-cameraX * 0.15f, 0f)
+            parallaxFar.forEach { elem ->
+                paint.color = elem.color
+                canvas.drawCircle(elem.x, elem.y, elem.size, paint)
+            }
+            canvas.restore()
+
+            canvas.save()
+            canvas.translate(-cameraX * 0.4f, 0f)
+            parallaxMid.forEach { elem ->
+                paint.color = elem.color
+                canvas.drawCircle(elem.x, elem.y, elem.size, paint)
+                canvas.drawCircle(elem.x + elem.size, elem.y - elem.size * 0.5f, elem.size * 0.7f, paint)
+                canvas.drawCircle(elem.x - elem.size * 0.5f, elem.y + elem.size * 0.3f, elem.size * 0.8f, paint)
+            }
+            canvas.restore()
+
+            canvas.save()
+            canvas.translate(-cameraX * 0.7f, 0f)
+            parallaxNear.forEach { elem ->
+                paint.color = elem.color
+                when (currentMapType) {
+                    MapType.GRASS -> {
+                        paint.strokeWidth = 2f
+                        paint.style = Paint.Style.STROKE
+                        canvas.drawLine(elem.x, elem.y, elem.x - 2f, elem.y - elem.size, paint)
+                        canvas.drawLine(elem.x, elem.y, elem.x + 2f, elem.y - elem.size * 0.8f, paint)
+                        canvas.drawLine(elem.x, elem.y, elem.x, elem.y - elem.size * 1.1f, paint)
+                        paint.style = Paint.Style.FILL
+                    }
+                    MapType.DIRT -> {
+                        paint.strokeWidth = 1.5f
+                        paint.style = Paint.Style.STROKE
+                        canvas.drawLine(elem.x, elem.y, elem.x + elem.size, elem.y, paint)
+                        paint.style = Paint.Style.FILL
+                    }
+                }
+            }
+            canvas.restore()
+        }
+
+        // === CELEBRATION ===
+        private fun spawnCelebration(winnerLaneIndex: Int) {
+            showCelebration = true
+            celebrationParticles.clear()
+            val fX = trackLength - FINISH_LINE_OFFSET
+            val rH = height.toFloat() / displayLaneCount
+            val winnerScreenX = fX - cameraX
+            val winnerScreenY = winnerLaneIndex * rH + rH / 2f
+
+            val colors = intArrayOf(
+                Color.parseColor("#FFD700"), Color.parseColor("#FF6B35"),
+                Color.parseColor("#FF1744"), Color.parseColor("#FFFFFF"),
+                Color.parseColor("#FFC107"), Color.parseColor("#E040FB"),
+                Color.parseColor("#00E5FF")
+            )
+
+            repeat(80) {
+                val angle = Random.nextFloat() * Math.PI.toFloat() * 2f
+                val speed = Random.nextFloat() * 8f + 3f
+                celebrationParticles.add(CelebrationParticle(
+                    x = winnerScreenX + Random.nextFloat() * 60f - 30f,
+                    y = winnerScreenY + Random.nextFloat() * 60f - 30f,
+                    vx = cos(angle) * speed,
+                    vy = sin(angle) * speed - Random.nextFloat() * 3f,
+                    color = colors[Random.nextInt(colors.size)],
+                    size = Random.nextFloat() * 8f + 3f,
+                    alpha = 255f,
+                    rotation = Random.nextFloat() * 360f,
+                    rotationSpeed = Random.nextFloat() * 15f - 7.5f
+                ))
+            }
+        }
+
+        private fun updateCelebrationParticles() {
+            val iterator = celebrationParticles.iterator()
+            while (iterator.hasNext()) {
+                val p = iterator.next()
+                p.x += p.vx
+                p.y += p.vy
+                p.vy += 0.15f
+                p.alpha -= 2f
+                p.rotation += p.rotationSpeed
+                p.size *= 0.995f
+                if (p.alpha <= 0f) iterator.remove()
+            }
+        }
+
+        private fun drawCelebration(canvas: Canvas) {
+            celebrationParticles.forEach { p ->
+                paint.color = p.color
+                paint.alpha = p.alpha.toInt().coerceIn(0, 255)
+                paint.style = Paint.Style.FILL
+                canvas.save()
+                canvas.translate(p.x, p.y)
+                canvas.rotate(p.rotation)
+                when ((p.color xor p.size.toInt()) % 3) {
+                    0 -> canvas.drawRect(-p.size, -p.size * 0.5f, p.size, p.size * 0.5f, paint)
+                    1 -> canvas.drawCircle(0f, 0f, p.size * 0.6f, paint)
+                    else -> {
+                        val path = Path().apply {
+                            moveTo(0f, -p.size)
+                            lineTo(p.size * 0.7f, p.size * 0.5f)
+                            lineTo(-p.size * 0.7f, p.size * 0.5f)
+                            close()
+                        }
+                        canvas.drawPath(path, paint)
+                    }
+                }
+                canvas.restore()
+            }
+            paint.alpha = 255
+
+            val winner = racingAnimals.find { it.rank == 1 }
+            if (winner != null) {
+                val idx = racingAnimals.indexOf(winner)
+                val rH = height.toFloat() / displayLaneCount
+                val fX = trackLength - FINISH_LINE_OFFSET
+                val animalScreenX = winner.progress * fX - cameraX
+                val animalScreenY = idx * rH + rH / 2f
+                val animalSize = getAnimalSize()
+                paint.textSize = animalSize * 0.5f
+                paint.textAlign = Paint.Align.CENTER
+                val crownBob = sin(frameCounter * 0.1f) * 5f
+                canvas.drawText("\uD83D\uDC51", animalScreenX, animalScreenY - animalSize * 0.6f + crownBob, paint)
             }
         }
     }
