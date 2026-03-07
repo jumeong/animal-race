@@ -253,39 +253,88 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun showResultDialog() {
-        val winner = raceView.getWinner()
+        val results = raceView.getResults()
         val dialogView = layoutInflater.inflate(R.layout.dialog_result, null)
         val dialog = AlertDialog.Builder(this)
             .setView(dialogView)
             .setCancelable(false)
             .create()
 
-        setupResultDialog(dialogView, winner, dialog)
+        setupResultDialog(dialogView, results, dialog)
         dialog.show()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
     }
 
-    private fun setupResultDialog(dialogView: View, winner: Animal?, dialog: AlertDialog) {
-        val imgWinner = dialogView.findViewById<android.widget.ImageView>(R.id.imgWinnerAnimal)
-        val txtEmoji = dialogView.findViewById<TextView>(R.id.txtWinnerEmoji)
+    private fun setupResultDialog(dialogView: View, results: List<Animal>, dialog: AlertDialog) {
         val txtMsg = dialogView.findViewById<TextView>(R.id.txtResultMessage)
+        val layoutLeftColumn = dialogView.findViewById<android.widget.LinearLayout>(R.id.layoutLeftColumn)
+        val layoutRightColumn = dialogView.findViewById<android.widget.LinearLayout>(R.id.layoutRightColumn)
         val btnRematch = dialogView.findViewById<Button>(R.id.btnRematch)
-
-        if (winner != null) {
-            val bitmap = raceView.getAnimalBitmap(winner.emoji)
-            if (bitmap != null) {
-                imgWinner.setImageBitmap(bitmap)
-                imgWinner.visibility = View.VISIBLE
-                txtEmoji.visibility = View.GONE
-            } else {
-                txtEmoji.text = winner.emoji
-                txtEmoji.visibility = View.VISIBLE
-                imgWinner.visibility = View.GONE
-            }
-        }
 
         txtMsg.text = "RACE OVER"
         txtMsg.visibility = View.VISIBLE
+
+        layoutLeftColumn.removeAllViews()
+        layoutRightColumn.removeAllViews()
+
+        val getOrdinal = { n: Int ->
+            when {
+                n % 100 in 11..13 -> "${n}th"
+                n % 10 == 1 -> "${n}st"
+                n % 10 == 2 -> "${n}nd"
+                n % 10 == 3 -> "${n}rd"
+                else -> "${n}th"
+            }
+        }
+
+        results.forEachIndexed { index, animal ->
+            val itemLayout = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, 10, 0, 10)
+            }
+
+            val rankText = TextView(this).apply {
+                text = getOrdinal(animal.rank)
+                textSize = 25f
+                setTextColor(Color.WHITE)
+                typeface = androidx.core.content.res.ResourcesCompat.getFont(this@MainActivity, R.font.pfstardust)
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    180, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginEnd = 20
+                }
+                textAlignment = View.TEXT_ALIGNMENT_TEXT_END
+            }
+
+            val animalBitmap = raceView.getAnimalBitmap(animal.emoji)
+            val animalView = if (animalBitmap != null) {
+                android.widget.ImageView(this).apply {
+                    setImageBitmap(animalBitmap)
+                    layoutParams = android.widget.LinearLayout.LayoutParams(100, 100)
+                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                }
+            } else {
+                TextView(this).apply {
+                    text = animal.emoji
+                    textSize = 34f
+                    layoutParams = android.widget.LinearLayout.LayoutParams(
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                }
+            }
+
+            itemLayout.addView(rankText)
+            itemLayout.addView(animalView)
+
+            if (index < 5) {
+                layoutLeftColumn.addView(itemLayout)
+            } else {
+                layoutRightColumn.addView(itemLayout)
+            }
+        }
 
         btnRematch.setOnClickListener {
             raceView.resetGame()
@@ -404,6 +453,7 @@ class MainActivity : AppCompatActivity() {
         fun isRacing(): Boolean = isRacing
         fun getAnimalBitmap(emoji: String): Bitmap? = animalBitmaps[emoji]
         fun getWinner(): Animal? = racingAnimals.find { it.rank == 1 }
+        fun getResults(): List<Animal> = racingAnimals.sortedBy { it.rank }
 
         fun resetGame() {
             allAnimals.forEach {
