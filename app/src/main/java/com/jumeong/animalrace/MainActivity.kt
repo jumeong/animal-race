@@ -12,6 +12,10 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.os.Build
 import android.widget.Button
 
 import android.widget.LinearLayout
@@ -100,6 +104,26 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
 
+        // 펀치홀 영역까지 화면 확장 (갤럭시 S20 등 대응)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        // 전체 화면 및 펀치홀 확장 적용 (안정적인 방식으로 수정)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+
         val isDarkMode = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val backgroundColor = if (isDarkMode) Color.BLACK else Color.WHITE
 
@@ -140,6 +164,10 @@ class MainActivity : AppCompatActivity() {
         val configuration = RequestConfiguration.Builder().setTestDeviceIds(testDeviceIds).build()
         MobileAds.setRequestConfiguration(configuration)
         MobileAds.initialize(this) {}
+    }
+
+    private fun dpToPx(dp: Float): Int {
+        return (dp * resources.displayMetrics.density).toInt()
     }
 
     fun startBgm() {
@@ -291,19 +319,19 @@ class MainActivity : AppCompatActivity() {
             val itemLayout = android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(0, 10, 0, 10)
+                setPadding(0, dpToPx(2f), 0, dpToPx(2f))
             }
 
             val rankText = TextView(this).apply {
                 text = getOrdinal(animal.rank)
-                textSize = 25f
+                textSize = 18f
                 setTextColor(Color.WHITE)
                 typeface = androidx.core.content.res.ResourcesCompat.getFont(this@MainActivity, R.font.pfstardust)
                 gravity = android.view.Gravity.CENTER_VERTICAL
                 layoutParams = android.widget.LinearLayout.LayoutParams(
-                    180, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                    dpToPx(55f), android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    marginEnd = 20
+                    marginEnd = dpToPx(6f)
                 }
                 textAlignment = View.TEXT_ALIGNMENT_TEXT_END
             }
@@ -312,13 +340,14 @@ class MainActivity : AppCompatActivity() {
             val animalView = if (animalBitmap != null) {
                 android.widget.ImageView(this).apply {
                     setImageBitmap(animalBitmap)
-                    layoutParams = android.widget.LinearLayout.LayoutParams(100, 100)
+                    val iconSize = dpToPx(28f)
+                    layoutParams = android.widget.LinearLayout.LayoutParams(iconSize, iconSize)
                     scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                 }
             } else {
                 TextView(this).apply {
                     text = animal.emoji
-                    textSize = 34f
+                    textSize = 22f
                     layoutParams = android.widget.LinearLayout.LayoutParams(
                         android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
                         android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
@@ -330,8 +359,10 @@ class MainActivity : AppCompatActivity() {
             itemLayout.addView(animalView)
 
             if (index < 5) {
+                layoutLeftColumn.gravity = android.view.Gravity.END
                 layoutLeftColumn.addView(itemLayout)
             } else {
+                layoutRightColumn.gravity = android.view.Gravity.START
                 layoutRightColumn.addView(itemLayout)
             }
         }

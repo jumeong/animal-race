@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="380dp"
+    <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="#2C2C2C"
     android:orientation="vertical"
@@ -12,54 +12,50 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="RACE OVER"
-        android:textSize="30sp"
+        android:textSize="28sp"
         android:textColor="#FFFFFF"
         android:textStyle="bold"
         android:fontFamily="@font/pfstardust"
-        android:layout_marginBottom="15dp" />
+        android:includeFontPadding="false"
+        android:layout_marginTop="0dp"
+        android:layout_marginBottom="10dp" />
 
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="250dp"
-        android:fadeScrollbars="false">
+    <LinearLayout
+        android:id="@+id/layoutResultsContainer"
+        android:layout_width="240dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:orientation="horizontal"
+        android:baselineAligned="false"
+        android:weightSum="100">
 
         <LinearLayout
-            android:id="@+id/layoutResultsContainer"
-            android:layout_width="match_parent"
+            android:id="@+id/layoutLeftColumn"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:baselineAligned="false"
-            android:weightSum="100">
+            android:layout_weight="50"
+            android:orientation="vertical"
+            android:gravity="center_horizontal" />
 
-            <LinearLayout
-                android:id="@+id/layoutLeftColumn"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="50"
-                android:orientation="vertical"
-                android:paddingStart="140dp"
-                android:gravity="end" />
-
-            <LinearLayout
-                android:id="@+id/layoutRightColumn"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="50"
-                android:orientation="vertical"
-                android:paddingStart="40dp"
-                android:gravity="start" />
-        </LinearLayout>
-    </ScrollView>
+        <LinearLayout
+            android:id="@+id/layoutRightColumn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="50"
+            android:orientation="vertical"
+            android:gravity="center_horizontal" />
+    </LinearLayout>
 
     <Button
         android:id="@+id/btnRematch"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="48dp"
         android:text="REMATCH"
         android:textSize="18sp"
         android:fontFamily="@font/pfstardust"
         android:textStyle="bold"
-        android:layout_marginTop="20dp"
+        android:layout_marginTop="15dp"
+        android:paddingVertical="8dp"
         android:backgroundTint="#FFC107" />
 
 </LinearLayout>
