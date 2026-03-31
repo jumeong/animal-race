@@ -23,11 +23,14 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.res.ResourcesCompat
+import android.widget.ImageView
+import com.google.android.gms.ads.AdLoader
 import com.google.android.gms.ads.AdRequest
-import com.google.android.gms.ads.AdSize
-import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.RequestConfiguration
+import com.google.android.gms.ads.nativead.NativeAd
+import com.google.android.gms.ads.nativead.NativeAdOptions
+import com.google.android.gms.ads.nativead.NativeAdView
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.cos
@@ -97,7 +100,7 @@ private const val LANE_SEPARATOR_WIDTH = 10f  // 5f에서 10f로 변경
 class MainActivity : AppCompatActivity() {
     private var mediaPlayer: MediaPlayer? = null
     private lateinit var raceView: RaceView
-    private lateinit var adView: AdView
+    private var nativeAd: NativeAd? = null
     private var isBgmEnabled = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,33 +133,30 @@ class MainActivity : AppCompatActivity() {
         initializeAds()
 
         val rootLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(backgroundColor)
         }
 
         raceView = RaceView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
+                ViewGroup.LayoutParams.MATCH_PARENT,
                 1f
             )
         }
 
-        adView = AdView(this).apply {
-            setAdSize(AdSize.BANNER)
-            adUnitId = "ca-app-pub-1141162708477405/6104737015"
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
+        val adWidthPx = (160 * resources.displayMetrics.density + 0.5f).toInt()
+        val nativeAdView = layoutInflater.inflate(R.layout.layout_native_ad, null) as NativeAdView
+        nativeAdView.layoutParams = LinearLayout.LayoutParams(
+            adWidthPx,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
 
         rootLayout.addView(raceView)
-        rootLayout.addView(adView)
+        rootLayout.addView(nativeAdView)
         setContentView(rootLayout)
 
-        val adRequest = AdRequest.Builder().build()
-        adView.loadAd(adRequest)
+        loadNativeAd(nativeAdView)
     }
 
     private fun initializeAds() {
@@ -200,14 +200,12 @@ class MainActivity : AppCompatActivity() {
     fun isBgmEnabled(): Boolean = isBgmEnabled
 
     override fun onPause() {
-        adView.pause()
         super.onPause()
         mediaPlayer?.pause()
     }
 
     override fun onResume() {
         super.onResume()
-        adView.resume()
         if (isBgmEnabled && raceView.isRacing() && !raceView.isPaused()) {
             mediaPlayer?.start()
         }
@@ -374,10 +372,63 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        adView.destroy()
+        nativeAd?.destroy()
         super.onDestroy()
         mediaPlayer?.release()
         mediaPlayer = null
+    }
+
+    private fun loadNativeAd(adView: NativeAdView) {
+        val builder = AdLoader.Builder(this, "ca-app-pub-1141162708477405/7386462230")
+        builder.forNativeAd { ad ->
+            nativeAd?.destroy()
+            nativeAd = ad
+            populateNativeAdView(ad, adView)
+        }
+        val adOptions = NativeAdOptions.Builder().build()
+        builder.withNativeAdOptions(adOptions)
+        val adLoader = builder.build()
+        adLoader.loadAd(AdRequest.Builder().build())
+    }
+
+    private fun populateNativeAdView(nativeAd: NativeAd, adView: NativeAdView) {
+        adView.headlineView = adView.findViewById(R.id.ad_headline)
+        adView.bodyView = adView.findViewById(R.id.ad_body)
+        adView.callToActionView = adView.findViewById(R.id.ad_call_to_action)
+        adView.iconView = adView.findViewById(R.id.ad_app_icon)
+        adView.advertiserView = adView.findViewById(R.id.ad_advertiser)
+
+        (adView.headlineView as TextView).text = nativeAd.headline
+
+        if (nativeAd.body == null) {
+            adView.bodyView?.visibility = View.INVISIBLE
+        } else {
+            adView.bodyView?.visibility = View.VISIBLE
+            (adView.bodyView as TextView).text = nativeAd.body
+        }
+
+        if (nativeAd.callToAction == null) {
+            adView.callToActionView?.visibility = View.INVISIBLE
+        } else {
+            adView.callToActionView?.visibility = View.VISIBLE
+            (adView.callToActionView as Button).text = nativeAd.callToAction
+        }
+
+        if (nativeAd.icon == null) {
+            adView.iconView?.visibility = View.GONE
+        } else {
+            (adView.iconView as ImageView).setImageDrawable(nativeAd.icon?.drawable)
+            adView.iconView?.visibility = View.VISIBLE
+        }
+
+        if (nativeAd.advertiser == null) {
+            adView.advertiserView?.visibility = View.INVISIBLE
+        } else {
+            (adView.advertiserView as TextView).text = nativeAd.advertiser
+            adView.advertiserView?.visibility = View.VISIBLE
+        }
+
+        adView.setNativeAd(nativeAd)
     }
 
     // --- 커스텀 뷰 클래스 ---
