@@ -1,72 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.google.android.gms.ads.nativead.NativeAdView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="#2C2C2C"> <!-- 다크 테마 배경에 맞춤 -->
+    android:layout_height="wrap_content"
+    android:background="#2C2C2C">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:padding="8dp">
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="4dp">
+
+        <!-- Ad Badge (Required by AdMob) -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#FFCC00"
+            android:textColor="#FFFFFF"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:text="Ad"
+            android:paddingHorizontal="4dp"
+            android:layout_marginEnd="4dp"/>
+
+        <ImageView
+            android:id="@+id/ad_app_icon"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="8dp"
+            android:adjustViewBounds="true" />
 
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-            <ImageView
-                android:id="@+id/ad_app_icon"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:adjustViewBounds="true"
-                android:layout_marginEnd="8dp"/>
-
-            <LinearLayout
-                android:layout_width="0dp"
+            <TextView
+                android:id="@+id/ad_headline"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
+                android:textColor="@android:color/white"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:lines="1"
+                android:ellipsize="end"/>
 
-                <TextView
-                    android:id="@+id/ad_headline"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="@android:color/white"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
+            <TextView
+                android:id="@+id/ad_body"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#D0D0D0"
+                android:textSize="12sp"
+                android:lines="1"
+                android:ellipsize="end"/>
 
-                <TextView
-                    android:id="@+id/ad_advertiser"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="#A0A0A0"
-                    android:textSize="12sp" />
-            </LinearLayout>
+            <TextView
+                android:id="@+id/ad_advertiser"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#A0A0A0"
+                android:textSize="10sp"
+                android:lines="1"
+                android:ellipsize="end"
+                android:visibility="gone"/>
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/ad_body"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="#D0D0D0"
-            android:textSize="12sp"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp" />
-
-        <!-- 하단 푸시 공간 -->
-        <Space
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"/>
 
         <Button
             android:id="@+id/ad_call_to_action"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
+            android:layout_marginStart="8dp"
+            android:textSize="12sp"
             android:textColor="@android:color/white"
-            android:backgroundTint="#4CAF50" />
+            android:backgroundTint="#4CAF50"
+            android:minHeight="0dp"
+            android:minWidth="0dp"
+            android:paddingVertical="8dp"
+            android:paddingHorizontal="12dp" />
+
     </LinearLayout>
 </com.google.android.gms.ads.nativead.NativeAdView>

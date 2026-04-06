@@ -41,7 +41,8 @@ import kotlin.random.Random
 enum class GameState { INTRO, COUNTDOWN, RACING, FINISHED }
 enum class RaceState { RUNNING, STUNNED, BOOST }
 
-data class TrackObject(val progress: Float, val isItem: Boolean, var isActive: Boolean = true)
+enum class TrackObjectType { PUDDLE, BOOST, ANGEL }
+data class TrackObject(val progress: Float, val type: TrackObjectType, var isActive: Boolean = true)
 data class SandParticle(val x: Float, val y: Float, val size: Float, val alpha: Int)
 data class CelebrationParticle(
     var x: Float, var y: Float,
@@ -62,7 +63,9 @@ data class Animal(
     var bobOffset: Float = 0f,
     var rotation: Float = 0f,
     var isSelected: Boolean = false,
-    var currentBoostPower: Float = 1.0f
+    var currentBoostPower: Float = 1.0f,
+    var isShielded: Boolean = false,
+    var shieldDuration: Int = 0
 )
 
 enum class MapType {
@@ -88,6 +91,7 @@ private const val MAX_ROTATION = 720f
 private const val COLLISION_THRESHOLD = 0.006f
 private const val BOOST_DURATION = 45
 private const val STUN_DURATION = 60
+private const val ANGEL_DURATION = 94   // 1.5초 (16ms × 94 ≈ 1504ms)
 private const val CATCHUP_DISTANCE = 0.1f
 private const val CATCHUP_SPEED = 0.0002f
 
@@ -133,23 +137,22 @@ class MainActivity : AppCompatActivity() {
         initializeAds()
 
         val rootLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             setBackgroundColor(backgroundColor)
         }
 
         raceView = RaceView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
-                0,
                 ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
                 1f
             )
         }
 
-        val adWidthPx = (160 * resources.displayMetrics.density + 0.5f).toInt()
         val nativeAdView = layoutInflater.inflate(R.layout.layout_native_ad, null) as NativeAdView
         nativeAdView.layoutParams = LinearLayout.LayoutParams(
-            adWidthPx,
-            ViewGroup.LayoutParams.MATCH_PARENT
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
         )
 
         rootLayout.addView(raceView)
@@ -475,6 +478,8 @@ class MainActivity : AppCompatActivity() {
 
         private val animalBitmaps = mutableMapOf<String, Bitmap>()
         private var rocketBitmap: Bitmap? = null
+        private var chickenLegBitmap: Bitmap? = null
+        private var angelWingBitmap: Bitmap? = null
 
         private val allAnimals = mutableListOf(
             Animal("🦖"), Animal("🐑"), Animal("🫏"), Animal("🐢"), Animal("🐧"),
@@ -524,6 +529,8 @@ class MainActivity : AppCompatActivity() {
             handler.post(updateRunnable)
             loadAnimalBitmaps()
             loadRocketBitmap()
+            loadChickenLegBitmap()
+            loadAngelWingBitmap()
         }
 
         fun togglePause() {
@@ -574,6 +581,32 @@ class MainActivity : AppCompatActivity() {
                     val original = BitmapFactory.decodeResource(resources, resourceId)
                     rocketBitmap = Bitmap.createScaledBitmap(original, ROCKET_SIZE, ROCKET_SIZE, true)
                     if (original != rocketBitmap) original.recycle()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        private fun loadChickenLegBitmap() {
+            try {
+                val resourceId = resources.getIdentifier("chicken_leg", "drawable", context.packageName)
+                if (resourceId != 0) {
+                    val original = BitmapFactory.decodeResource(resources, resourceId)
+                    chickenLegBitmap = Bitmap.createScaledBitmap(original, ROCKET_SIZE, ROCKET_SIZE, true)
+                    if (original != chickenLegBitmap) original.recycle()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        private fun loadAngelWingBitmap() {
+            try {
+                val resourceId = resources.getIdentifier("angel_wing", "drawable", context.packageName)
+                if (resourceId != 0) {
+                    val original = BitmapFactory.decodeResource(resources, resourceId)
+                    angelWingBitmap = Bitmap.createScaledBitmap(original, ROCKET_SIZE, ROCKET_SIZE, true)
+                    if (original != angelWingBitmap) original.recycle()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -886,7 +919,12 @@ class MainActivity : AppCompatActivity() {
             allAnimals.filter { it.isSelected }.forEach {
                 racingAnimals.add(it.copy(speed = 0.0013f + Random.nextFloat() * 0.0002f))
                 val objects = MutableList(Random.nextInt(3, 7)) {
-                    TrackObject(Random.nextFloat() * 0.8f + 0.1f, Random.nextBoolean())
+                    val type = when ((0..9).random()) {
+                        in 0..4 -> TrackObjectType.PUDDLE
+                        in 5..7 -> TrackObjectType.BOOST
+                        else    -> TrackObjectType.ANGEL
+                    }
+                    TrackObject(Random.nextFloat() * 0.8f + 0.1f, type)
                 }.apply { sortBy { it.progress } }
                 trackObjects.add(objects)
             }
@@ -958,14 +996,23 @@ class MainActivity : AppCompatActivity() {
         private fun checkCollisions(animal: Animal, trackIndex: Int) {
             trackObjects[trackIndex].forEach { obj ->
                 if (obj.isActive && Math.abs(animal.progress - obj.progress) < COLLISION_THRESHOLD) {
-                    if (obj.isItem) {
-                        animal.state = RaceState.BOOST
-                        animal.stateDuration = BOOST_DURATION
-                        animal.currentBoostPower = 1.15f + Random.nextFloat() * 0.15f
-                    } else {
-                        animal.state = RaceState.STUNNED
-                        animal.stateDuration = STUN_DURATION
-                        animal.rotation = 0f
+                    when (obj.type) {
+                        TrackObjectType.BOOST -> {
+                            animal.state = RaceState.BOOST
+                            animal.stateDuration = BOOST_DURATION
+                            animal.currentBoostPower = 1.15f + Random.nextFloat() * 0.15f
+                        }
+                        TrackObjectType.PUDDLE -> {
+                            if (!animal.isShielded) {
+                                animal.state = RaceState.STUNNED
+                                animal.stateDuration = STUN_DURATION
+                                animal.rotation = 0f
+                            }
+                        }
+                        TrackObjectType.ANGEL -> {
+                            animal.isShielded = true
+                            animal.shieldDuration = ANGEL_DURATION
+                        }
                     }
                     obj.isActive = false
                 }
@@ -973,6 +1020,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         private fun updateAnimalState(animal: Animal, index: Int, leaderProgress: Float) {
+            // Update shield countdown
+            if (animal.shieldDuration > 0) {
+                animal.shieldDuration--
+                if (animal.shieldDuration <= 0) animal.isShielded = false
+            }
+
             // Update state duration
             if (animal.stateDuration > 0) {
                 animal.stateDuration--
@@ -1422,6 +1475,15 @@ class MainActivity : AppCompatActivity() {
                     canvas.drawText("🔥", -animalSize * 0.75f, -animalSize * 0.25f, paint)
                 }
 
+                if (animal.isShielded) {
+                    angelWingBitmap?.let { bitmap ->
+                        val overlaySize = (animalSize * 0.9f).toInt()
+                        val scaled = Bitmap.createScaledBitmap(bitmap, overlaySize, overlaySize, true)
+                        canvas.drawBitmap(scaled, -overlaySize / 2f, -animalSize * 0.95f, bitmapPaint)
+                        scaled.recycle()
+                    }
+                }
+
                 // 1-4: Stun stars orbiting
                 if (animal.state == RaceState.STUNNED) {
                     paint.textSize = animalSize * 0.3f
@@ -1442,13 +1504,21 @@ class MainActivity : AppCompatActivity() {
         private fun drawTrackObjects(canvas: Canvas, trackIndex: Int, finishX: Float, centerY: Float, itemScale: Float) {
             trackObjects[trackIndex].forEach { obj ->
                 if (obj.isActive) {
-                    if (obj.isItem) {
-                        val rocketSize = (ROCKET_SIZE * itemScale).toInt()
-                        drawBoostItem(canvas, obj.progress * finishX, centerY, rocketSize)
-                    } else {
-                        drawPuddle(canvas, obj.progress * finishX, centerY, itemScale)
+                    val scaledSize = (ROCKET_SIZE * itemScale).toInt()
+                    when (obj.type) {
+                        TrackObjectType.BOOST  -> drawBoostItem(canvas, obj.progress * finishX, centerY, scaledSize)
+                        TrackObjectType.PUDDLE -> drawPuddle(canvas, obj.progress * finishX, centerY, itemScale)
+                        TrackObjectType.ANGEL  -> drawAngelPickup(canvas, obj.progress * finishX, centerY, scaledSize)
                     }
                 }
+            }
+        }
+
+        private fun drawAngelPickup(canvas: Canvas, x: Float, y: Float, size: Int) {
+            chickenLegBitmap?.let { bitmap ->
+                val scaled = if (bitmap.width != size) Bitmap.createScaledBitmap(bitmap, size, size, true) else bitmap
+                canvas.drawBitmap(scaled, x - size / 2f, y - size / 2f, bitmapPaint)
+                if (scaled != bitmap) scaled.recycle()
             }
         }
 
